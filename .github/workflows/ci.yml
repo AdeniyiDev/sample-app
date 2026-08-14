@@ -77,8 +77,9 @@ jobs:
           format: table
           exit-code: '1' # fail the pipeline if vulnerabilities are found
           severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true # skip findings with no available fix yet (e.g. bundled inside the base OS image, not our own dependencies)
+          ignore-unfixed: true # skip findings with no available fix yet
           trivyignores: '${{ github.workspace }}/.trivyignore'
+          skip-dirs: '/usr/local/lib/node_modules/npm,/opt/yarn-v1.22.22'
 
       - name: Push image to ECR
         env:

@@ -1,13 +1,17 @@
 # Vulnerabilities intentionally accepted after review.
 # Each entry MUST have a comment explaining why - never ignore silently.
+#
+# npm's own bundled internal CLI tooling (usr/local/lib/node_modules/npm/...)
+# is excluded from scanning entirely via `skip-dirs` in the CI workflow,
+# since it ships inside the Node.js base image and our app never invokes
+# or exposes it at runtime - it is not part of our real dependency tree
+# or attack surface (our own dependencies live under /app/node_modules,
+# which only contains express and morgan).
 
-# node-tar vulnerabilities bundled inside npm itself (part of the Node.js
-# base image's internal tooling, not a dependency our application code
-# uses or exposes). No practical exploit path for this app: we never
-# process untrusted tar archives. `ignore-unfixed: true` in the CI
-# workflow handles findings with no patch available yet; the entries
-# below have fixes released upstream but haven't landed in this base
-# image build yet - re-check these at each Dockerfile base image bump.
-CVE-2026-31802
-CVE-2026-59874
-CVE-2026-29786
+# libssl3 / libcrypto3 (Alpine base image OpenSSL libraries) - fix is
+# released upstream (3.5.7-r0) but hasn't landed in the currently
+# published node:20-alpine tag yet. Our app does not call
+# PKCS7_verify() or otherwise process untrusted PKCS7 data, so this
+# specific vulnerability has no practical exploit path here. Re-check
+# at each Dockerfile base image bump.
+CVE-2026-45447
