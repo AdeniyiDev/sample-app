@@ -1,0 +1,111 @@
+name: CI - Build, Test, Scan, Push
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Required for GitHub's OIDC token to be issued to this workflow run,
+# so it can authenticate to AWS without any stored access keys.
+permissions:
+  id-token: write
+  contents: write
+
+env:
+  AWS_REGION: eu-north-1
+  ECR_REPOSITORY: sample-app
+  # This ARN comes from the `github_actions_role_arn` Terraform output.
+  AWS_ROLE_ARN: arn:aws:iam::348258987583:role/platform-infra-dev-github-actions-role
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+  build-scan-push:
+    name: Build, Scan & Push Image
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    # Only build/push on an actual merge to main - not on every PR,
+    # to avoid filling ECR with images from unmerged branches.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          format: table
+          exit-code: '1' # fail the pipeline if vulnerabilities are found
+          severity: 'CRITICAL,HIGH'
+
+      - name: Push image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Check out app-manifests repo
+        uses: actions/checkout@v4
+        with:
+          repository: AdeniyiDev/app-manifests
+          token: ${{ secrets.MANIFESTS_REPO_TOKEN }}
+          path: app-manifests
+
+      - name: Update image tag in app-manifests
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd app-manifests
+          NEW_IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          # Matches any "image: ...sample-app..." line, regardless of what
+          # tag/registry it currently points to.
+          sed -i "s|image: .*sample-app.*|image: $NEW_IMAGE|" apps/sample-app/base/deployment.yaml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/sample-app/base/deployment.yaml
+          git commit -m "Update sample-app image to ${IMAGE_TAG}" || echo "No changes to commit"
+          git push
