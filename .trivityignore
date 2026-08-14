@@ -1,0 +1,11 @@
+# Vulnerabilities intentionally accepted after review.
+# Each entry MUST have a comment explaining why - never ignore silently.
+
+# node-tar vulnerabilities bundled inside npm itself (part of the Node.js
+# base image's internal tooling, not a dependency our application code
+# uses or exposes). No practical exploit path for this app: we never
+# process untrusted tar archives, and the base image will pick up the
+# upstream fix on its next patch release. Re-evaluate at each Dockerfile
+# base image bump.
+CVE-2026-31802
+CVE-2026-59874
