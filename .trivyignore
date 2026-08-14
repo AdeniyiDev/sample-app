@@ -1,9 +1,13 @@
 # Vulnerabilities intentionally accepted after review.
 # Each entry MUST have a comment explaining why - never ignore silently.
-#
-# Most findings from node-tar and similar bundled-in-npm packages are
-# now handled by `ignore-unfixed: true` in the CI workflow (they have
-# no available fix yet, since they live inside the Node.js base image's
-# internal tooling, not our own dependencies). This file is for cases
-# where a fix DOES exist upstream but we've deliberately chosen not to
-# take it yet, with a documented reason below.
+
+# node-tar vulnerabilities bundled inside npm itself (part of the Node.js
+# base image's internal tooling, not a dependency our application code
+# uses or exposes). No practical exploit path for this app: we never
+# process untrusted tar archives. `ignore-unfixed: true` in the CI
+# workflow handles findings with no patch available yet; the entries
+# below have fixes released upstream but haven't landed in this base
+# image build yet - re-check these at each Dockerfile base image bump.
+CVE-2026-31802
+CVE-2026-59874
+CVE-2026-29786
